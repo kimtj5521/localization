@@ -178,6 +178,7 @@ void subscribeCallback_gps(const std_msgs::Float64MultiArray& msg)
 void subscribeCallback_init(const std_msgs::String::ConstPtr& msg)
 {
     GPS_init = true;
+    std::cout << "gps init..!" << std::endl;
 }
 
 int main(int argc, char** argv)
