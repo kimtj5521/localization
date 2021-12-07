@@ -1,0 +1,4 @@
+num_of_ref_satellite : 8
+ref_HDOP : 1.7
+update_threshold_velocity : 0.27 # m/s 
+# 1.0 km/h = 0.2777777777777778 m/s

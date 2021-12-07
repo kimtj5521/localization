@@ -2,6 +2,8 @@
 #include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/String.h>
 #include <sensor_msgs/Imu.h>
+#include <nav_msgs/Odometry.h>
+#include <tf/transform_broadcaster.h>
 #include <opencv2/opencv.hpp>
 
 #include <iostream>
@@ -62,7 +64,9 @@ double minimum_value = 0.0;
 int ref_index = 0;
 Mat vel_and_yawRate, GPS_data;
 
-// 0~3 km/h is noisy at TRAM. So, threshold is 3.0 km/h
-double update_threshold_velocity = 1.0; // 1.0km/h
+double update_threshold_velocity;
 
 double count_test = 0.0;
+
+int num_of_ref_satellite;
+float ref_HDOP;

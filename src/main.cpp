@@ -164,7 +164,8 @@ void subscribeCallback_gps(const std_msgs::Float64MultiArray& msg)
 
     // GPRMC speed is used for vehicle speed
     m_odom_data_prev = m_odom_data;
-    m_odom_data.velocity = m_gps_data.gprmc_speed * 3.6; // m/s to km/h
+    //m_odom_data.velocity = m_gps_data.gprmc_speed * 3.6; // m/s to km/h
+    m_odom_data.velocity = m_gps_data.gprmc_speed;
 }
 
 //void subscribeCallback_odom(const navi::rio_to_pc& msg)
@@ -179,13 +180,15 @@ void subscribeCallback_init(const std_msgs::String::ConstPtr& msg)
 {
     GPS_init = true;
     std::cout << "gps init..!" << std::endl;
+    // m_dRef_UTM_X = m_dGPS_UTM_X;
+    // m_dRef_UTM_Y = m_dGPS_UTM_Y;
 }
 
 int main(int argc, char** argv)
 {
     interval = 0.01;
 
-    ros::init(argc, argv, "navi");
+    ros::init(argc, argv, "localization");
     ros::NodeHandle nh;
 
     ros::Publisher pub_pose_estimation = nh.advertise<std_msgs::Float64MultiArray>("POS_T",1);
@@ -195,7 +198,14 @@ int main(int argc, char** argv)
     //ros::Subscriber listener_odom = nh.subscribe("TEST",1, subscribeCallback_odom, ros::TransportHints().tcpNoDelay());
     ros::Subscriber listener_init = nh.subscribe("init",100, subscribeCallback_init, ros::TransportHints().tcpNoDelay());
 
+    nh.getParam("/num_of_ref_satellite", num_of_ref_satellite);
+    nh.getParam("/ref_HDOP", ref_HDOP);
+    nh.getParam("/update_threshold_velocity", update_threshold_velocity);
+    
     std_msgs::Float64MultiArray msg_ekf_pose_result_publish;
+
+    ros::Publisher pub_odom = nh.advertise<nav_msgs::Odometry>("/odom", 50);
+    tf::TransformBroadcaster odom_broadcaster;
 
     ros::Rate loop_rate(100);
 
@@ -258,7 +268,7 @@ int main(int argc, char** argv)
             cmp_gps_time = false;
         }
 
-        if((m_gps_data.num_use_satellite > 10) && (m_gps_data.HDOP < 1.5)){
+        if((m_gps_data.num_use_satellite > num_of_ref_satellite) && (m_gps_data.HDOP < ref_HDOP)){
             cmp_num_setellite_and_dev = true;
         }
         else {
@@ -302,7 +312,7 @@ int main(int argc, char** argv)
             h_gps = (-1.0*m_gps_data.gprmc_gps_heading+90.0)*PI/180.0;
             h_gps = m_ekf.AngDiff(h_gps);
         }
-        if(vehicle_speed < (-1.0*update_threshold_velocity)){ // backward threshold is -3.0 km/h
+        if(vehicle_speed < (-1.0*update_threshold_velocity)){ 
             h_gps = (-1.0*m_gps_data.gprmc_gps_heading+90.0)*PI/180.0 - PI;
             h_gps = m_ekf.AngDiff(h_gps);
         }
@@ -327,13 +337,15 @@ int main(int argc, char** argv)
         }
         /////////////////////////////////////////////////////
 
-        vel_ave = (vehicle_speed * v_gain)/3.6;
+        //vel_ave = (vehicle_speed * v_gain)/3.6;
+        vel_ave = (vehicle_speed * v_gain);
         if( fabs(vehicle_speed) <= update_threshold_velocity){
+            vel_ave = 0.0;
             c_yaw_rate = 0.0;
         }
         else {
-            c_yaw_rate = (imu_yaw_rate - hbias)*(-1.0); // this case : left turn is plus
-            //c_yaw_rate = (imu_yaw_rate - hbias); // this case : right turn is plus
+            //c_yaw_rate = (imu_yaw_rate - hbias)*(-1.0); // this case : right turn is plus
+            c_yaw_rate = (imu_yaw_rate - hbias); // this case : left turn is plus
         }
 
         vel_and_yawRate.ptr<double>(0)[0] = vel_ave;
@@ -390,7 +402,7 @@ int main(int argc, char** argv)
             m_ekf.EKF_Correctionstep(m_ekf.m_xhat, m_ekf.m_Phat, m_gps_data.quality_indicator, pos_update_boolean, heading_update_boolean, GPS_data);
         }
         else {
-            if (((POS_init == true) && (fabs(vehicle_speed) < update_threshold_velocity)) || (GPS_init == true)){
+            /*if (((POS_init == true) && (fabs(vehicle_speed) < update_threshold_velocity)) || (GPS_init == true)){
                 if(GPS_init == true){
                     m_ekf.m_xhat.ptr<double>(0)[0] = m_gps_data.pos_x;
                     m_ekf.m_xhat.ptr<double>(1)[0] = m_gps_data.pos_y;
@@ -402,6 +414,15 @@ int main(int argc, char** argv)
                     m_ekf.m_xhat.ptr<double>(1)[0] = m_gps_data.pos_y;
                     m_ekf.m_xhat.ptr<double>(2)[0] = h_gps;
                 }
+            }
+            else {
+                m_ekf.m_xhat.ptr<double>(2)[0] = h_gps;
+            }*/
+            if(GPS_init == true){
+                GPS_init = false;
+                m_ekf.m_xhat.ptr<double>(0)[0] = m_gps_data.pos_x;
+                m_ekf.m_xhat.ptr<double>(1)[0] = m_gps_data.pos_y;
+                m_ekf.m_xhat.ptr<double>(2)[0] = h_gps;
             }
             else {
                 m_ekf.m_xhat.ptr<double>(2)[0] = h_gps;
@@ -427,6 +448,31 @@ int main(int argc, char** argv)
         }
         pub_pose_estimation.publish(msg_ekf_pose_result_publish);
 
+        geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(m_d_nav_result[2]*PI/180.0);
+
+        geometry_msgs::TransformStamped odom_trans;
+        odom_trans.header.stamp = ros::Time::now();
+        odom_trans.header.frame_id = "odom";
+        odom_trans.child_frame_id = "base_link";
+
+        odom_trans.transform.translation.x = m_d_nav_result[0];
+        odom_trans.transform.translation.y = m_d_nav_result[1];
+        odom_trans.transform.translation.z = 0.0;
+        odom_trans.transform.rotation = odom_quat;
+
+        odom_broadcaster.sendTransform(odom_trans);
+
+        nav_msgs::Odometry odom;
+        odom.header.stamp = ros::Time::now();
+        odom.header.frame_id = "odom";
+
+        odom.pose.pose.position.x = m_d_nav_result[0];
+        odom.pose.pose.position.y = m_d_nav_result[1];
+        odom.pose.pose.position.z = 0.0;
+        odom.pose.pose.orientation = odom_quat;
+
+        pub_odom.publish(odom);
+
         m_imu_data_prev = m_imu_data;
         m_odom_data_prev = m_odom_data;
         m_gps_data_prev = m_gps_data;
@@ -436,7 +482,7 @@ int main(int argc, char** argv)
         // calculate interval time
         clock_gettime(CLOCK_MONOTONIC, &curr_time);
         interval = (curr_time.tv_nsec - prev_time.tv_nsec)/1000000000.0; /* seconds */
-        if (!(interval > 0.0098 && interval < 0.012)){
+        if (!(interval > 0.0098 && interval < 0.0102)){
             interval = 0.01;
         }
         //cout << "interval: " << interval << endl;

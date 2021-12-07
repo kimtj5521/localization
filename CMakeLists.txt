@@ -5,6 +5,9 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   std_msgs
+  geometry_msgs
+  nav_msgs
+  tf
 )
 
 find_package(OpenCV REQUIRED)
@@ -24,7 +27,7 @@ set( headers
 
 catkin_package(
   LIBRARIES navi
-  CATKIN_DEPENDS roscpp sensor_msgs std_msgs 
+  CATKIN_DEPENDS roscpp sensor_msgs std_msgs geometry_msgs nav_msgs
 )
 
 include_directories(

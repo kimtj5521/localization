@@ -1,4 +1,7 @@
 <?xml version="1.0"?>
 <launch>
+
+  <rosparam command="load" file="$(find localization)/config/params.yaml" />
+
   <node pkg="localization" type="localization_node" name="localization_node" output="screen" />
 </launch>
